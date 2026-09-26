@@ -218,6 +218,15 @@
     location.href = '../caja/';
   });
 
+  // Si se queda abierta en un iPad compartido, se cierra sola tras 15 minutos sin uso.
+  let inactividad = null;
+  function reiniciarInactividad() {
+    clearTimeout(inactividad);
+    inactividad = setTimeout(async () => { await sb.auth.signOut(); location.href = '../caja/'; }, 15 * 60 * 1000);
+  }
+  ['pointerdown', 'keydown'].forEach((ev) => document.addEventListener(ev, reiniciarInactividad, { passive: true }));
+  reiniciarInactividad();
+
   arrancar();
 </script>
 </body>

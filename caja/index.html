@@ -93,9 +93,9 @@
   <header>
     <img src="../img/logo.png" alt="Reformanda">
     <div class="quien" id="quien" hidden>
-      <div id="quienNombre"></div>
+      <div>Atiende: <strong id="quienNombre"></strong></div>
       <a id="linkPersonal" href="../personal/" hidden style="color:var(--rojo)">Personal</a>
-      <button id="salir" type="button">Cerrar sesión</button>
+      <button id="salir" type="button">Cambiar de barista</button>
     </div>
   </header>
 
@@ -147,9 +147,24 @@
     <button class="btn" id="btnSello" type="button">Poner sello</button>
     <button class="btn premio" id="btnCanje" type="button" hidden>Canjear premio</button>
     <div id="avisoCliente" class="aviso" hidden></div>
+    <button class="btn secundario" id="btnDeshacer" type="button" hidden>↶ Deshacer</button>
     <button class="btn secundario" id="btnSiguiente" type="button">Siguiente cliente</button>
+    <button class="btn enlace" id="btnAjustar" type="button" hidden>Ajustar sellos (admin)</button>
     <button class="btn enlace" id="btnRecuperar" type="button">Recuperar tarjeta en su celular</button>
   </section>
+
+  <!-- Canje: confirma con los últimos 4 dígitos del celular del cliente -->
+  <form id="capaCanje" class="capa" hidden>
+    <div class="panel">
+      <h1>Canjear premio</h1>
+      <p class="sub" id="canjeTxt"></p>
+      <label for="canje4">Pídele los últimos 4 dígitos de su celular</label>
+      <input id="canje4" inputmode="numeric" maxlength="4" autocomplete="off" style="text-align:center; font-size:28px; letter-spacing:.3em">
+      <button class="btn premio" id="btnConfirmarCanje" type="submit">Entregar premio</button>
+      <button class="btn secundario" id="btnCancelarCanje" type="button">Cancelar</button>
+      <div id="avisoCanje" class="aviso error" hidden></div>
+    </div>
+  </form>
 
   <!-- Recuperar tarjeta: el cliente escanea este QR con su celular -->
   <div id="capaRecuperar" class="capa" hidden>
@@ -175,6 +190,8 @@
   const vistas = ['vistaLogin', 'vistaEscanear', 'vistaCliente'];
   let config = { sellos_para_premio: 6, premio: 'Café americano gratis' };
   let clienteActual = null;
+  let yo = { id: null, esAdmin: false };
+  const MINUTOS_DESHACER = 10;
   let lector = null;
   let volverTimer = null;
 
@@ -228,15 +245,17 @@
       return;
     }
 
-    const [{ data: yo }, { data: cfg }] = await Promise.all([
+    const [{ data: persona }, { data: cfg }] = await Promise.all([
       sb.from('personal').select('nombre, rol').eq('id', session.user.id).single(),
       sb.from('configuracion').select('sellos_para_premio, premio').single(),
     ]);
     if (cfg) config = cfg;
-    $('quienNombre').textContent = yo?.nombre || session.user.email;
-    $('linkPersonal').hidden = yo?.rol !== 'admin';
+    yo = { id: session.user.id, esAdmin: persona?.rol === 'admin' };
+    $('quienNombre').textContent = persona?.nombre || session.user.email;
+    $('linkPersonal').hidden = !yo.esAdmin;
     // Al iniciar sesión, el admin llega directo a Personal; el barista, al escáner.
-    if (recienEntro && yo?.rol === 'admin') { location.href = '../personal/'; return; }
+    if (recienEntro && yo.esAdmin) { location.href = '../personal/'; return; }
+    reiniciarInactividad();
     $('quien').hidden = false;
     mostrar('vistaEscanear');
   }
@@ -254,11 +273,31 @@
     arrancar(true);
   });
 
-  $('salir').addEventListener('click', async () => {
+  async function salir(motivo) {
+    clearTimeout(inactividadTimer);
+    yo = { id: null, esAdmin: false };
     await sb.auth.signOut();
     $('quien').hidden = true;
+    $('capaCanje').hidden = true;
+    $('capaRecuperar').hidden = true;
     mostrar('vistaLogin');
-  });
+    aviso('avisoLogin', motivo || '', 'ok');
+    $('correo').value = '';
+    $('correo').focus();
+  }
+  $('salir').addEventListener('click', () => salir());
+
+  // En un iPad compartido, la sesión se cierra sola para que nadie selle a nombre de otro.
+  const MINUTOS_INACTIVIDAD = 15;
+  let inactividadTimer = null;
+  function reiniciarInactividad() {
+    clearTimeout(inactividadTimer);
+    if (!yo.id) return; // sin sesión no hay nada que cerrar
+    inactividadTimer = setTimeout(
+      () => salir(`Se cerró la sesión tras ${MINUTOS_INACTIVIDAD} minutos sin uso. Entra de nuevo.`),
+      MINUTOS_INACTIVIDAD * 60 * 1000);
+  }
+  ['pointerdown', 'keydown'].forEach((ev) => document.addEventListener(ev, reiniciarInactividad, { passive: true }));
 
   // ---------- Cámara ----------
   async function iniciarCamara() {
@@ -302,7 +341,7 @@
     if (buscando) return;
     buscando = true;
     const { data, error } = await sb.from('clientes')
-      .select('numero_miembro, nombre, telefono, sellos_actuales, ultimo_sello_en, token_tarjeta')
+      .select('id, numero_miembro, nombre, telefono, sellos_actuales, ultimo_sello_en, token_tarjeta')
       .eq(campo, valor).maybeSingle();
     buscando = false;
     if (error) { aviso('avisoEscanear', 'No se pudo consultar. Revisa la conexión.'); return; }
@@ -313,6 +352,11 @@
     }
     ocultarAlta();
     clienteActual = data;
+    const { data: mov } = await sb.from('movimientos')
+      .select('personal_id, creado_en')
+      .eq('cliente_id', data.id).in('tipo', ['sello', 'canje']).eq('revertido', false)
+      .order('creado_en', { ascending: false }).limit(1).maybeSingle();
+    clienteActual.ultimoMov = mov || null;
     $('numero').value = '';
     aviso('avisoCliente', '');
     pintarCliente();
@@ -332,6 +376,16 @@
     $('btnSello').hidden = lleno;
     $('btnCanje').hidden = !lleno;
     $('btnCanje').textContent = `Canjear: ${config.premio}`;
+    $('btnDeshacer').hidden = !puedeDeshacer();
+    $('btnAjustar').hidden = !yo.esAdmin;
+  }
+
+  // Deshacer: solo el último sello/canje de los últimos 10 min, hecho por mí (o si soy admin).
+  function puedeDeshacer() {
+    const m = clienteActual?.ultimoMov;
+    if (!m) return false;
+    const reciente = Date.now() - new Date(m.creado_en).getTime() < MINUTOS_DESHACER * 60 * 1000;
+    return reciente && (m.personal_id === yo.id || yo.esAdmin);
   }
 
   // Los errores de la base vienen como texto en español (ver funciones en base_de_datos/)
@@ -340,27 +394,71 @@
     return error?.message || 'Algo falló. Intenta de nuevo.';
   }
 
-  async function accion(boton, rpc, alTerminar) {
+  // Devuelve el error (o null) para que el llamador decida dónde mostrarlo.
+  async function accion(boton, rpc, alTerminar, extra = {}, registraMov = true) {
     boton.disabled = true;
-    const { data, error } = await sb.rpc(rpc, { p_numero_miembro: clienteActual.numero_miembro });
+    const { data, error } = await sb.rpc(rpc, { p_numero_miembro: clienteActual.numero_miembro, ...extra });
     boton.disabled = false;
-    if (error) { vibrar([60, 60, 60]); aviso('avisoCliente', mensajeError(error)); return; }
+    if (error) { vibrar([60, 60, 60]); return error; }
     const fila = Array.isArray(data) ? data[0] : data;
     clienteActual.sellos_actuales = fila.sellos_actuales;
+    clienteActual.ultimoMov = registraMov ? { personal_id: yo.id, creado_en: new Date().toISOString() } : null;
     pintarCliente();
     vibrar(80);
     aviso('avisoCliente', alTerminar(fila), 'ok');
     clearTimeout(volverTimer);
-    volverTimer = setTimeout(() => mostrar('vistaEscanear'), 6000);
+    volverTimer = setTimeout(() => mostrar('vistaEscanear'), 8000);
+    return null;
   }
 
-  $('btnSello').addEventListener('click', (e) => accion(e.currentTarget, 'poner_sello', (f) =>
-    f.premio_listo ? `¡Tarjeta completa! Ya puede canjear su ${config.premio.toLowerCase()}.`
-                   : `Sello puesto. Le faltan ${f.sellos_para_premio - f.sellos_actuales}.`));
+  $('btnSello').addEventListener('click', async (e) => {
+    const err = await accion(e.currentTarget, 'poner_sello', (f) =>
+      f.premio_listo ? `¡Tarjeta completa! Ya puede canjear su ${config.premio.toLowerCase()}.`
+                     : `Sello puesto. Le faltan ${f.sellos_para_premio - f.sellos_actuales}.`);
+    if (err) aviso('avisoCliente', mensajeError(err));
+  });
 
-  $('btnCanje').addEventListener('click', (e) => {
-    if (!confirm(`¿Entregar ${config.premio.toLowerCase()} a ${clienteActual.nombre}?`)) return;
-    accion(e.currentTarget, 'canjear_premio', (f) => `Premio canjeado: ${f.premio}. La tarjeta vuelve a ${f.sellos_actuales}.`);
+  // Canje: pide los últimos 4 dígitos del celular para que nadie se lleve el premio de otro.
+  $('btnCanje').addEventListener('click', () => {
+    clearTimeout(volverTimer);
+    $('canjeTxt').textContent = `${config.premio} para ${clienteActual.nombre}.`;
+    $('canje4').value = '';
+    aviso('avisoCanje', '');
+    $('capaCanje').hidden = false;
+    $('canje4').focus();
+  });
+  $('capaCanje').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const ultimos4 = $('canje4').value.replace(/\D/g, '');
+    if (ultimos4.length !== 4) { aviso('avisoCanje', 'Escribe los 4 dígitos.'); return; }
+    const err = await accion($('btnConfirmarCanje'), 'canjear_premio',
+      (f) => `Premio canjeado: ${f.premio}. La tarjeta vuelve a ${f.sellos_actuales}.`, { p_ultimos4: ultimos4 });
+    if (err) { aviso('avisoCanje', mensajeError(err)); $('canje4').select(); return; }
+    $('capaCanje').hidden = true;
+  });
+  $('btnCancelarCanje').addEventListener('click', () => { $('capaCanje').hidden = true; });
+
+  $('btnDeshacer').addEventListener('click', async (e) => {
+    const err = await accion(e.currentTarget, 'deshacer_ultimo',
+      (f) => `Listo: se deshizo el ${f.deshecho}. Ahora tiene ${f.sellos_actuales} sellos.`, {}, false);
+    if (err) aviso('avisoCliente', mensajeError(err));
+  });
+
+  // Ajuste manual (solo admin): corrige sellos con un motivo que queda registrado.
+  $('btnAjustar').addEventListener('click', async (e) => {
+    clearTimeout(volverTimer);
+    const cant = prompt('¿Cuántos sellos sumar o quitar? (ej. 1 o -1)');
+    if (cant === null) return;
+    const n = parseInt(cant, 10);
+    if (!Number.isInteger(n) || n === 0) { alert('Escribe un número distinto de 0, como 1 o -1.'); return; }
+    const nota = prompt('Motivo del ajuste (queda registrado):');
+    if (!nota || !nota.trim()) return;
+    const { data, error } = await sb.rpc('ajustar_sellos', { p_numero_miembro: clienteActual.numero_miembro, p_cantidad: n, p_nota: nota.trim() });
+    if (error) { aviso('avisoCliente', mensajeError(error)); return; }
+    clienteActual.sellos_actuales = data;
+    clienteActual.ultimoMov = null;
+    pintarCliente();
+    aviso('avisoCliente', `Ajuste guardado. Ahora tiene ${data} sellos.`, 'ok');
   });
 
   $('btnSiguiente').addEventListener('click', () => { clearTimeout(volverTimer); mostrar('vistaEscanear'); });
