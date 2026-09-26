@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#FAF7F2">
+<title>Personal Reformanda</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,600;9..40,700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../comun.css">
+<style>
+  main { max-width: 640px; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
+  header img { height: 40px; width: auto; }
+  header a { color: var(--rojo); font-weight: 600; }
+  .panel + .panel { margin-top: 16px; }
+  h2 { font-size: 18px; margin: 0 0 4px; }
+  select {
+    width: 100%; font: inherit; font-size: 18px; padding: 14px 16px; min-height: 52px;
+    border: 1.5px solid var(--linea); border-radius: 12px; background: var(--fondo); color: var(--tinta);
+  }
+  .fila { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 12px; padding: 14px 0; border-top: 1px solid var(--linea); }
+  .fila:first-of-type { border-top: 0; }
+  .fila .quien { flex: 1 1 180px; min-width: 0; }
+  .fila .nombre { font-weight: 700; }
+  .fila .detalle { color: var(--suave); font-size: 14px; margin-top: 4px; display: flex; gap: 6px; flex-wrap: wrap; }
+  .fila.inactivo .nombre { color: var(--suave); text-decoration: line-through; }
+  .etiqueta { font-size: 12px; font-weight: 700; padding: 3px 8px; border-radius: 99px; background: var(--fondo); border: 1px solid var(--linea); }
+  .etiqueta.admin { color: var(--rojo); border-color: var(--rojo); }
+  .mini { font: inherit; font-size: 14px; font-weight: 600; padding: 8px 12px; border-radius: 10px; border: 1.5px solid var(--linea); background: #fff; color: var(--tinta); cursor: pointer; white-space: nowrap; }
+  .acciones { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; flex: 1 1 auto; }
+  .ojo { display: flex; gap: 8px; }
+  .ojo input { flex: 1; min-width: 0; }
+  .ojo .mini { flex: none; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <img src="../img/logo.png" alt="Reformanda">
+    <a href="../caja/">← Caja</a>
+  </header>
+
+  <section id="vistaSinSesion" class="panel" hidden>
+    <h1>Personal</h1>
+    <p class="sub" id="sinSesionTxt">Primero inicia sesión en la caja con una cuenta de administrador.</p>
+    <a class="btn" href="../caja/">Ir a la caja</a>
+  </section>
+
+  <div id="vistaAdmin" hidden>
+    <section class="panel">
+      <h1>Personal</h1>
+      <p class="sub">Quién puede poner sellos y canjear premios.</p>
+      <div id="lista"></div>
+    </section>
+
+    <section class="panel">
+      <h2>Agregar a alguien</h2>
+      <p class="sub">Dale su correo y la contraseña para que entre a la caja.</p>
+      <form id="formAlta" novalidate>
+        <label for="aNombre">Nombre</label>
+        <input id="aNombre" type="text" maxlength="60" autocomplete="off">
+        <label for="aEmail">Correo</label>
+        <input id="aEmail" type="email" autocomplete="off">
+        <label for="aClave">Contraseña <span class="opc">(mínimo 8 caracteres)</span></label>
+        <div class="ojo">
+          <input id="aClave" type="password" autocomplete="new-password">
+          <button class="mini" type="button" data-ver="aClave">Ver</button>
+        </div>
+        <label for="aRol">Rol</label>
+        <select id="aRol">
+          <option value="barista">Barista: pone sellos y canjea</option>
+          <option value="admin">Administrador: además maneja al personal</option>
+        </select>
+        <button class="btn" id="btnAlta" type="submit">Agregar</button>
+        <div id="avisoAlta" class="aviso" hidden></div>
+      </form>
+    </section>
+  </div>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="../config.js"></script>
+<script>
+  const { SUPABASE_URL, SUPABASE_KEY } = window.REFORMANDA;
+  const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY); // comparte la sesión con la caja
+  const $ = (id) => document.getElementById(id);
+  let miId = null;
+
+  function aviso(id, texto, tipo = 'error') {
+    const el = $(id);
+    el.textContent = texto || '';
+    el.className = 'aviso ' + tipo;
+    el.hidden = !texto;
+  }
+
+  async function llamarFuncion(cuerpo) {
+    const { data, error } = await sb.functions.invoke('gestionar-personal', { body: cuerpo });
+    if (!error) return data;
+    let msg = 'Algo falló. Intenta de nuevo.';
+    try { msg = (await error.context.json()).error || msg; } catch (_) {}
+    throw new Error(msg);
+  }
+
+  async function arrancar() {
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) { $('vistaSinSesion').hidden = false; return; }
+    const { data: esAdmin } = await sb.rpc('es_admin');
+    if (!esAdmin) {
+      $('sinSesionTxt').textContent = 'Solo un administrador puede manejar al personal.';
+      $('vistaSinSesion').hidden = false;
+      return;
+    }
+    miId = session.user.id;
+    $('vistaAdmin').hidden = false;
+    cargarLista();
+  }
+
+  async function cargarLista() {
+    const { data, error } = await sb.from('personal').select('id, nombre, rol, activo, creado_en').order('creado_en');
+    if (error) { $('lista').textContent = 'No se pudo cargar la lista.'; return; }
+    $('lista').innerHTML = '';
+    for (const p of data) {
+      const fila = document.createElement('div');
+      fila.className = 'fila' + (p.activo ? '' : ' inactivo');
+      const soyYo = p.id === miId;
+      fila.innerHTML = `
+        <div class="quien">
+          <div class="nombre"></div>
+          <div class="detalle"><span class="etiqueta ${p.rol}">${p.rol === 'admin' ? 'Admin' : 'Barista'}</span>${p.activo ? '' : '<span class="etiqueta">Sin acceso</span>'}</div>
+        </div>
+        <div class="acciones">
+          <button class="mini" data-accion="clave">Cambiar contraseña</button>
+          ${soyYo ? '' : `<button class="mini" data-accion="activo">${p.activo ? 'Quitar acceso' : 'Devolver acceso'}</button>`}
+        </div>`;
+      fila.querySelector('.nombre').textContent = p.nombre + (soyYo ? ' (tú)' : '');
+      fila.querySelector('[data-accion="clave"]').onclick = () => cambiarClave(p);
+      const btnActivo = fila.querySelector('[data-accion="activo"]');
+      if (btnActivo) btnActivo.onclick = () => cambiarAcceso(p);
+      $('lista').appendChild(fila);
+    }
+  }
+
+  async function cambiarAcceso(p) {
+    const pregunta = p.activo
+      ? `¿Quitarle el acceso a ${p.nombre}? Ya no podrá poner sellos.`
+      : `¿Devolverle el acceso a ${p.nombre}?`;
+    if (!confirm(pregunta)) return;
+    const { error } = await sb.from('personal').update({ activo: !p.activo }).eq('id', p.id);
+    if (error) { alert('No se pudo cambiar.'); return; }
+    cargarLista();
+  }
+
+  async function cambiarClave(p) {
+    const clave = prompt(`Nueva contraseña para ${p.nombre} (mínimo 8 caracteres):`);
+    if (clave === null) return;
+    if (clave.length < 8) { alert('Debe tener al menos 8 caracteres.'); return; }
+    try {
+      await llamarFuncion({ accion: 'cambiar_clave', id: p.id, clave });
+      alert(`Listo. La nueva contraseña de ${p.nombre} ya funciona.`);
+    } catch (e) { alert(e.message); }
+  }
+
+  $('formAlta').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    aviso('avisoAlta', '');
+    const nombre = $('aNombre').value.trim();
+    const email = $('aEmail').value.trim();
+    const clave = $('aClave').value;
+    if (nombre.length < 2) return aviso('avisoAlta', 'Escribe el nombre.');
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return aviso('avisoAlta', 'El correo no es válido.');
+    if (clave.length < 8) return aviso('avisoAlta', 'La contraseña debe tener al menos 8 caracteres.');
+
+    $('btnAlta').disabled = true;
+    try {
+      await llamarFuncion({ accion: 'crear', nombre, email, clave, rol: $('aRol').value });
+      aviso('avisoAlta', `${nombre} ya puede entrar a la caja con ${email}.`, 'ok');
+      e.target.reset();
+      cargarLista();
+    } catch (err) {
+      aviso('avisoAlta', err.message);
+    } finally {
+      $('btnAlta').disabled = false;
+    }
+  });
+
+  document.querySelectorAll('[data-ver]').forEach((b) => b.addEventListener('click', () => {
+    const input = $(b.dataset.ver);
+    input.type = input.type === 'password' ? 'text' : 'password';
+    b.textContent = input.type === 'password' ? 'Ver' : 'Ocultar';
+  }));
+
+  arrancar();
+</script>
+</body>
+</html>

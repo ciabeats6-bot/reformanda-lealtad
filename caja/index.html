@@ -79,6 +79,13 @@
   .aviso.error { background: var(--error-fondo); color: var(--rojo-oscuro); }
 
   .cargando { opacity: .6; pointer-events: none; }
+  .cliente-tel { color: var(--suave); font-size: 14px; }
+  .btn.enlace { background: none; color: var(--rojo); font-size: 16px; padding: 10px; margin-top: 6px; text-decoration: underline; }
+
+  .capa { position: fixed; inset: 0; background: rgba(20, 16, 12, .6); display: grid; place-items: center; padding: 16px; z-index: 10; }
+  .capa .panel { width: 100%; max-width: 420px; text-align: center; }
+  .capa .qr-caja { display: inline-block; background: #fff; padding: 12px; border-radius: 12px; border: 1px solid var(--linea); margin: 8px 0 4px; }
+  .capa .qr-caja svg { display: block; width: 240px; height: 240px; }
 </style>
 </head>
 <body>
@@ -87,6 +94,7 @@
     <img src="../img/logo.png" alt="Reformanda">
     <div class="quien" id="quien" hidden>
       <div id="quienNombre"></div>
+      <a id="linkPersonal" href="../personal/" hidden style="color:var(--rojo)">Personal</a>
       <button id="salir" type="button">Cerrar sesión</button>
     </div>
   </header>
@@ -109,8 +117,7 @@
   <section id="vistaEscanear" hidden>
     <div id="lector"><div class="camara-aviso" id="camaraAviso">Abriendo la cámara…</div></div>
     <form class="manual" id="formManual">
-      <span class="prefijo">RFM-</span>
-      <input id="numero" inputmode="numeric" pattern="[0-9]*" placeholder="Número de miembro" autocomplete="off">
+      <input id="numero" inputmode="numeric" placeholder="Nº de miembro o celular" autocomplete="off">
       <button class="btn" type="submit">Buscar</button>
     </form>
     <div id="avisoEscanear" class="aviso error" hidden></div>
@@ -119,7 +126,7 @@
   <!-- 3. Cliente -->
   <section id="vistaCliente" class="panel" hidden>
     <p class="cliente-nombre" id="cNombre"></p>
-    <p class="cliente-num" id="cNumero"></p>
+    <p class="cliente-num"><span id="cNumero"></span> <span class="cliente-tel" id="cTel"></span></p>
     <img class="banner" id="cBanner" alt="">
     <p class="conteo"><strong id="cSellos">0</strong> de <span id="cMeta">6</span> sellos</p>
 
@@ -127,11 +134,24 @@
     <button class="btn premio" id="btnCanje" type="button" hidden>Canjear premio</button>
     <div id="avisoCliente" class="aviso" hidden></div>
     <button class="btn secundario" id="btnSiguiente" type="button">Siguiente cliente</button>
+    <button class="btn enlace" id="btnRecuperar" type="button">Recuperar tarjeta en su celular</button>
   </section>
+
+  <!-- Recuperar tarjeta: el cliente escanea este QR con su celular -->
+  <div id="capaRecuperar" class="capa" hidden>
+    <div class="panel">
+      <h1>Escanea con tu celular</h1>
+      <p class="sub" id="recNombre"></p>
+      <div class="qr-caja" id="recQr"></div>
+      <p class="sub">Se abre tu tarjeta con tus sellos. Guárdala en tu pantalla de inicio.</p>
+      <button class="btn" id="btnCerrarRec" type="button">Listo</button>
+    </div>
+  </div>
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
 <script>
   const SUPABASE_URL = 'https://ydcrucibujygrwggfcai.supabase.co';
   const SUPABASE_KEY = 'sb_publishable_cDyaRWSd7RI6vNLmqkoI3Q_ipup1ZKR'; // llave pública: es seguro que viva aquí
@@ -165,6 +185,13 @@
     return m ? 'RFM-' + m[1].padStart(6, '0') : null;
   }
 
+  // Celular a 10 dígitos (acepta espacios, guiones y +52)
+  function telefono(texto) {
+    let d = String(texto).replace(/\D/g, '');
+    if (d.length === 12 && d.startsWith('52')) d = d.slice(2);
+    return d.length === 10 ? d : null;
+  }
+
   // ---------- Sesión ----------
   async function arrancar() {
     const { data: { session } } = await sb.auth.getSession();
@@ -179,11 +206,12 @@
     }
 
     const [{ data: yo }, { data: cfg }] = await Promise.all([
-      sb.from('personal').select('nombre').eq('id', session.user.id).single(),
+      sb.from('personal').select('nombre, rol').eq('id', session.user.id).single(),
       sb.from('configuracion').select('sellos_para_premio, premio').single(),
     ]);
     if (cfg) config = cfg;
     $('quienNombre').textContent = yo?.nombre || session.user.email;
+    $('linkPersonal').hidden = yo?.rol !== 'admin';
     $('quien').hidden = false;
     mostrar('vistaEscanear');
   }
@@ -216,7 +244,7 @@
       await lector.start(
         { facingMode: 'environment' },
         { fps: 10, qrbox: (w, h) => { const s = Math.floor(Math.min(w, h) * 0.7); return { width: s, height: s }; } },
-        (texto) => { const num = normalizar(texto); if (num) { vibrar(40); buscar(num); } },
+        (texto) => { const num = normalizar(texto); if (num) { vibrar(40); buscar('numero_miembro', num); } },
         () => {}
       );
     } catch (err) {
@@ -234,22 +262,27 @@
 
   $('formManual').addEventListener('submit', (e) => {
     e.preventDefault();
+    const tel = telefono($('numero').value);
+    if (tel) { buscar('telefono', tel); return; }
     const num = normalizar($('numero').value);
-    if (!num) { aviso('avisoEscanear', 'Escribe solo el número, por ejemplo 12.'); return; }
-    buscar(num);
+    if (!num) { aviso('avisoEscanear', 'Escribe el número de miembro (ej. 12) o el celular a 10 dígitos.'); return; }
+    buscar('numero_miembro', num);
   });
 
   // ---------- Cliente ----------
   let buscando = false;
-  async function buscar(numero) {
+  async function buscar(campo, valor) {
     if (buscando) return;
     buscando = true;
     const { data, error } = await sb.from('clientes')
-      .select('numero_miembro, nombre, sellos_actuales, ultimo_sello_en')
-      .eq('numero_miembro', numero).maybeSingle();
+      .select('numero_miembro, nombre, telefono, sellos_actuales, ultimo_sello_en, token_tarjeta')
+      .eq(campo, valor).maybeSingle();
     buscando = false;
     if (error) { aviso('avisoEscanear', 'No se pudo consultar. Revisa la conexión.'); return; }
-    if (!data) { aviso('avisoEscanear', `No existe el miembro ${numero}.`); return; }
+    if (!data) {
+      aviso('avisoEscanear', campo === 'telefono' ? `No hay ninguna tarjeta con el celular ${valor}.` : `No existe el miembro ${valor}.`);
+      return;
+    }
     clienteActual = data;
     $('numero').value = '';
     aviso('avisoCliente', '');
@@ -262,6 +295,7 @@
     const lleno = c.sellos_actuales >= meta;
     $('cNombre').textContent = c.nombre;
     $('cNumero').textContent = c.numero_miembro;
+    $('cTel').textContent = c.telefono ? '· ' + c.telefono.replace(/(\d{3})(\d{3})(\d{4})/, '$1 $2 $3') : '';
     $('cSellos').textContent = c.sellos_actuales;
     $('cMeta').textContent = meta;
     $('cBanner').src = `../img/sellos_${Math.min(c.sellos_actuales, 6)}.png`;
@@ -301,6 +335,19 @@
   });
 
   $('btnSiguiente').addEventListener('click', () => { clearTimeout(volverTimer); mostrar('vistaEscanear'); });
+
+  // Recuperar tarjeta: QR con el link privado de su tarjeta
+  $('btnRecuperar').addEventListener('click', () => {
+    clearTimeout(volverTimer);
+    const url = new URL('../tarjeta/?t=' + encodeURIComponent(clienteActual.token_tarjeta), location.href).href;
+    const qr = qrcode(0, 'M');
+    qr.addData(url);
+    qr.make();
+    $('recQr').innerHTML = qr.createSvgTag({ cellSize: 6, margin: 0, scalable: true });
+    $('recNombre').textContent = `${clienteActual.nombre} · ${clienteActual.numero_miembro}`;
+    $('capaRecuperar').hidden = false;
+  });
+  $('btnCerrarRec').addEventListener('click', () => { $('capaRecuperar').hidden = true; });
 
   sb.auth.onAuthStateChange((evento) => { if (evento === 'SIGNED_OUT') mostrar('vistaLogin'); });
   arrancar();

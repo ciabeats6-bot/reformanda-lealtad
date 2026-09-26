@@ -6,7 +6,10 @@ Todo lo que se publica en internet vive aquí (se puede subir tal cual a Netlify
 |---|---|---|
 | `registro/` | Cliente (escanea el QR de la barra) | Formulario: nombre, celular, correo y cumpleaños opcionales → crea su tarjeta |
 | `tarjeta/` | Cliente | Su tarjeta con sellos y el QR para caja. Se actualiza sola cada 8 s mientras está abierta |
-| `caja/` | Barista | Escanea el QR, pone sellos y canjea premios (ver `caja/LEEME.md`) |
+| `caja/` | Barista | Escanea el QR o busca por número o celular, pone sellos, canjea premios y recupera tarjetas perdidas (ver `caja/LEEME.md`) |
+| `personal/` | Administrador | Alta de baristas, cambio de contraseña y quitar acceso. Usa la Edge Function `gestionar-personal` (código en `base_de_datos/funciones/`) |
+| `privacidad/` | Cliente | Aviso de privacidad |
+| `imprimir/` | Tú | Letrero carta con el QR del registro para la barra |
 
 - `config.js`: dirección de Supabase y llave pública.
 - `comun.css`: estilos del registro y la tarjeta.
