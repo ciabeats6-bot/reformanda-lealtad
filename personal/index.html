@@ -32,6 +32,16 @@
   .ojo { display: flex; gap: 8px; }
   .ojo input { flex: 1; min-width: 0; }
   .ojo .mini { flex: none; }
+  .tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 12px 0 4px; }
+  .tile { background: var(--fondo); border: 1px solid var(--linea); border-radius: 12px; padding: 10px 12px; }
+  .tile b { display: block; font-size: 26px; line-height: 1.1; color: var(--rojo); font-variant-numeric: tabular-nums; }
+  .tile span { font-size: 13px; color: var(--suave); }
+  @media (max-width: 420px) { .tiles { grid-template-columns: repeat(2, 1fr); } }
+  table.rep { width: 100%; border-collapse: collapse; font-size: 14px; margin-top: 6px; }
+  table.rep th { text-align: left; color: var(--suave); font-weight: 600; font-size: 12px; border-bottom: 1px solid var(--linea); padding: 6px 4px; }
+  table.rep td { border-bottom: 1px solid var(--linea); padding: 7px 4px; font-variant-numeric: tabular-nums; }
+  table.rep td.n, table.rep th.n { text-align: right; }
+  .vacio { color: var(--suave); font-size: 14px; padding: 8px 0; }
 </style>
 </head>
 <body>
@@ -55,6 +65,16 @@
       <h1>Hola<span id="saludo"></span></h1>
       <p class="sub">Desde el escáner puedes poner sellos, canjear premios y registrar clientes.</p>
       <a class="btn" href="../caja/" style="margin-top:12px">Escanear y registrar clientes</a>
+    </section>
+
+    <section class="panel">
+      <h2>Reporte del mes</h2>
+      <p class="sub">Datos en vivo del programa de lealtad.</p>
+      <div class="tiles" id="tiles"></div>
+      <h3 style="margin:18px 0 0; font-size:15px">Últimos meses</h3>
+      <div id="tablaMeses"></div>
+      <h3 style="margin:18px 0 0; font-size:15px">Por persona (este mes)</h3>
+      <div id="tablaPersonas"></div>
     </section>
 
     <section class="panel">
@@ -83,6 +103,17 @@
         </select>
         <button class="btn" id="btnAlta" type="submit">Agregar</button>
         <div id="avisoAlta" class="aviso" hidden></div>
+      </form>
+    </section>
+
+    <section class="panel">
+      <h2>Dar de baja a un cliente</h2>
+      <p class="sub">Cuando un cliente pide que borren sus datos (aviso de privacidad). Se borra su tarjeta y todo su historial; no se puede deshacer.</p>
+      <form id="formBaja" novalidate>
+        <label for="bajaDato">Celular o número de miembro</label>
+        <input id="bajaDato" type="text" inputmode="numeric" autocomplete="off" placeholder="Ej. 228 123 4567 o 12">
+        <button class="btn" id="btnBaja" type="submit" style="background:var(--rojo-oscuro)">Dar de baja</button>
+        <div id="avisoBaja" class="aviso" hidden></div>
       </form>
     </section>
   </div>
@@ -125,6 +156,7 @@
     $('saludo').textContent = yo?.nombre ? `, ${yo.nombre}` : '';
     $('vistaAdmin').hidden = false;
     cargarLista();
+    cargarReporte();
   }
 
   async function cargarLista() {
@@ -201,6 +233,45 @@
     input.type = input.type === 'password' ? 'text' : 'password';
     b.textContent = input.type === 'password' ? 'Ver' : 'Ocultar';
   }));
+
+  // ---------- Reporte ----------
+  const MESES = ['enero','febrero','marzo','abril','mayo','junio','julio','agosto','septiembre','octubre','noviembre','diciembre'];
+  const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+
+  async function cargarReporte() {
+    const { data, error } = await sb.rpc('reporte_dueno');
+    if (error) { $('tiles').innerHTML = '<div class="vacio">No se pudo cargar el reporte.</div>'; return; }
+    const r = data.resumen;
+    const tiles = [
+      [r.clientes_total, 'clientes en total'], [r.clientes_mes, 'nuevos este mes'], [r.sellos_mes, 'sellos este mes'],
+      [r.canjes_mes, 'premios canjeados este mes'], [r.premios_pendientes, 'tarjetas llenas sin canjear'], [r.aceptan_promociones, 'aceptan promociones'],
+    ];
+    $('tiles').innerHTML = tiles.map(([n, t]) => `<div class="tile"><b>${n}</b><span>${t}</span></div>`).join('');
+
+    $('tablaMeses').innerHTML = data.meses.length ? `<table class="rep"><thead><tr><th>Mes</th><th class="n">Nuevos</th><th class="n">Activos</th><th class="n">Sellos</th><th class="n">Canjes</th></tr></thead><tbody>${
+      data.meses.map((m) => { const [a, mm] = m.mes.split('-'); return `<tr><td>${MESES[+mm - 1]} ${a}</td><td class="n">${m.clientes_nuevos}</td><td class="n">${m.clientes_activos}</td><td class="n">${m.sellos}</td><td class="n">${m.canjes}</td></tr>`; }).join('')
+    }</tbody></table>` : '<div class="vacio">Todavía no hay movimientos.</div>';
+
+    $('tablaPersonas').innerHTML = data.por_persona.length ? `<table class="rep"><thead><tr><th>Persona</th><th class="n">Sellos</th><th class="n">Canjes</th><th class="n">Registros</th><th class="n">Deshechos</th></tr></thead><tbody>${
+      data.por_persona.map((p) => `<tr><td>${esc(p.nombre)}${p.activo ? '' : ' <span class="etiqueta">Sin acceso</span>'}</td><td class="n">${p.sellos}</td><td class="n">${p.canjes}</td><td class="n">${p.registros}</td><td class="n">${p.deshechos}</td></tr>`).join('')
+    }</tbody></table>` : '<div class="vacio">Sin personal.</div>';
+  }
+
+  // ---------- Baja de cliente ----------
+  $('formBaja').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    aviso('avisoBaja', '');
+    const dato = $('bajaDato').value.trim();
+    if (!dato) return aviso('avisoBaja', 'Escribe el celular o el número de miembro.');
+    if (!confirm(`¿Borrar para siempre al cliente "${dato}" y todo su historial?`)) return;
+    $('btnBaja').disabled = true;
+    const { data, error } = await sb.rpc('eliminar_cliente', { p_busqueda: dato });
+    $('btnBaja').disabled = false;
+    if (error) return aviso('avisoBaja', error.message || 'No se pudo dar de baja.');
+    aviso('avisoBaja', `Listo: se borró a ${data} y su historial.`, 'ok');
+    $('bajaDato').value = '';
+    cargarReporte();
+  });
 
   // Usuario sugerido a partir del nombre ("María José" → "maria"), hasta que lo editen a mano.
   function limpiarUsuario(t) {

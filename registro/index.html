@@ -43,6 +43,10 @@
         <span>Quiero enterarme de promociones de Reformanda.</span>
       </label>
 
+      <!-- Trampa para robots: un campo que las personas no ven ni llenan -->
+      <div aria-hidden="true" style="position:absolute; left:-9999px; width:1px; height:1px; overflow:hidden">
+        <label for="sitioWeb">No llenar</label><input id="sitioWeb" type="text" tabindex="-1" autocomplete="off">
+      </div>
       <button class="btn" id="enviar" type="submit">Crear mi tarjeta</button>
       <div id="aviso" class="aviso error" hidden></div>
     </form>
@@ -71,9 +75,12 @@
     $('aviso').hidden = !texto;
   }
 
+  const abiertoEn = Date.now();
   $('form').addEventListener('submit', async (e) => {
     e.preventDefault();
     error('');
+    // Los robots llenan el campo oculto o envían en menos de 3 segundos
+    if ($('sitioWeb').value || Date.now() - abiertoEn < 3000) { error('Algo falló. Intenta de nuevo.'); return; }
     const nombre = $('nombre').value.trim();
     const telefono = $('telefono').value.replace(/\D/g, '');
     if (nombre.length < 2) { error('Escribe tu nombre.'); $('nombre').focus(); return; }
