@@ -121,6 +121,17 @@
       <button class="btn" type="submit">Buscar</button>
     </form>
     <div id="avisoEscanear" class="aviso error" hidden></div>
+
+    <!-- Alta en caja para clientes sin smartphone: aparece al buscar un celular que no existe -->
+    <form id="altaRapida" class="panel" style="margin-top:16px" hidden>
+      <h1>Registrar cliente</h1>
+      <p class="sub">Celular <strong id="altaTel"></strong>. En sus siguientes visitas, búscalo por este número.</p>
+      <label for="altaNombre">Nombre</label>
+      <input id="altaNombre" type="text" maxlength="60" autocomplete="off">
+      <button class="btn" id="btnAlta" type="submit">Registrar y continuar</button>
+      <button class="btn secundario" id="btnCancelarAlta" type="button">Cancelar</button>
+      <div id="avisoAlta" class="aviso error" hidden></div>
+    </form>
   </section>
 
   <!-- 3. Cliente -->
@@ -165,6 +176,7 @@
   let volverTimer = null;
 
   function mostrar(vista) {
+    if (vista !== 'vistaEscanear' && $('altaRapida')) $('altaRapida').hidden = true;
     vistas.forEach((v) => ($(v).hidden = v !== vista));
     if (vista === 'vistaEscanear') iniciarCamara(); else detenerCamara();
   }
@@ -293,9 +305,11 @@
     buscando = false;
     if (error) { aviso('avisoEscanear', 'No se pudo consultar. Revisa la conexión.'); return; }
     if (!data) {
-      aviso('avisoEscanear', campo === 'telefono' ? `No hay ninguna tarjeta con el celular ${valor}.` : `No existe el miembro ${valor}.`);
+      if (campo === 'telefono') { mostrarAlta(valor); return; }
+      aviso('avisoEscanear', `No existe el miembro ${valor}.`);
       return;
     }
+    $('altaRapida').hidden = true;
     clienteActual = data;
     $('numero').value = '';
     aviso('avisoCliente', '');
@@ -348,6 +362,38 @@
   });
 
   $('btnSiguiente').addEventListener('click', () => { clearTimeout(volverTimer); mostrar('vistaEscanear'); });
+
+  // ---------- Alta en caja ----------
+  let altaTelefono = null;
+  function mostrarAlta(tel) {
+    altaTelefono = tel;
+    const bonito = tel.replace(/(\d{3})(\d{3})(\d{4})/, '$1 $2 $3');
+    aviso('avisoEscanear', `No hay ninguna tarjeta con el celular ${bonito}.`);
+    aviso('avisoAlta', '');
+    $('altaTel').textContent = bonito;
+    $('altaNombre').value = '';
+    $('altaRapida').hidden = false;
+    $('altaNombre').focus();
+  }
+
+  $('altaRapida').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const nombre = $('altaNombre').value.trim();
+    if (nombre.length < 2) { aviso('avisoAlta', 'Escribe el nombre del cliente.'); return; }
+    $('btnAlta').disabled = true;
+    const { error } = await sb.rpc('registrar_cliente', { p_nombre: nombre, p_telefono: altaTelefono });
+    $('btnAlta').disabled = false;
+    if (error) { aviso('avisoAlta', mensajeError(error)); return; }
+    $('altaRapida').hidden = true;
+    aviso('avisoEscanear', '');
+    await buscar('telefono', altaTelefono);
+    aviso('avisoCliente', 'Cliente registrado. Ya le puedes poner su primer sello.', 'ok');
+  });
+
+  $('btnCancelarAlta').addEventListener('click', () => {
+    $('altaRapida').hidden = true;
+    aviso('avisoEscanear', '');
+  });
 
   // Recuperar tarjeta: QR con el link privado de su tarjeta
   $('btnRecuperar').addEventListener('click', () => {
