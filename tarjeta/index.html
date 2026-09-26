@@ -51,7 +51,6 @@
     </div>
     <div class="qr">
       <div class="qr-caja" id="qr"></div>
-      <div class="num" id="numero"></div>
     </div>
   </section>
 
@@ -98,7 +97,6 @@
     $('banner').alt = `${t.sellos_actuales} de ${t.sellos_para_premio} sellos`;
     $('nombre').textContent = t.nombre;
     $('premio').textContent = t.premio;
-    $('numero').textContent = t.numero_miembro;
     $('listo').hidden = !lleno;
     $('listo').textContent = `¡Tarjeta completa! Pide tu ${t.premio.toLowerCase()} en caja.`;
 
