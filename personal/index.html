@@ -38,7 +38,10 @@
 <main>
   <header>
     <img src="../img/logo.png" alt="Reformanda">
-    <a href="../caja/">Ir al escáner →</a>
+    <div style="display:flex; gap:16px; font-size:15px">
+      <a href="../caja/">Escáner</a>
+      <a href="#" id="salir">Cerrar sesión</a>
+    </div>
   </header>
 
   <section id="vistaSinSesion" class="panel" hidden>
@@ -49,19 +52,25 @@
 
   <div id="vistaAdmin" hidden>
     <section class="panel">
-      <h1>Personal</h1>
+      <h1>Hola<span id="saludo"></span></h1>
+      <p class="sub">Desde el escáner puedes poner sellos, canjear premios y registrar clientes.</p>
+      <a class="btn" href="../caja/" style="margin-top:12px">Escanear y registrar clientes</a>
+    </section>
+
+    <section class="panel">
+      <h2>Personal</h2>
       <p class="sub">Quién puede poner sellos y canjear premios.</p>
       <div id="lista"></div>
     </section>
 
     <section class="panel">
       <h2>Agregar a alguien</h2>
-      <p class="sub">Entrará a la caja con su celular y esta contraseña.</p>
+      <p class="sub">Entrará a la caja con su usuario y esta contraseña.</p>
       <form id="formAlta" novalidate>
         <label for="aNombre">Nombre</label>
         <input id="aNombre" type="text" maxlength="60" autocomplete="off">
-        <label for="aTel">Celular</label>
-        <input id="aTel" type="tel" inputmode="tel" placeholder="10 dígitos" autocomplete="off">
+        <label for="aUsuario">Usuario <span class="opc">(con esto entra; sin espacios ni acentos)</span></label>
+        <input id="aUsuario" type="text" autocapitalize="none" autocorrect="off" spellcheck="false" maxlength="30" autocomplete="off" placeholder="Ej. mariana">
         <label for="aClave">Contraseña <span class="opc">(mínimo 8 caracteres)</span></label>
         <div class="ojo">
           <input id="aClave" type="password" autocomplete="new-password">
@@ -112,12 +121,14 @@
       return;
     }
     miId = session.user.id;
+    const { data: yo } = await sb.from('personal').select('nombre').eq('id', miId).maybeSingle();
+    $('saludo').textContent = yo?.nombre ? `, ${yo.nombre}` : '';
     $('vistaAdmin').hidden = false;
     cargarLista();
   }
 
   async function cargarLista() {
-    const { data, error } = await sb.from('personal').select('id, nombre, telefono, rol, activo, creado_en').order('creado_en');
+    const { data, error } = await sb.from('personal').select('id, nombre, usuario, rol, activo, creado_en').order('creado_en');
     if (error) { $('lista').textContent = 'No se pudo cargar la lista.'; return; }
     $('lista').innerHTML = '';
     for (const p of data) {
@@ -127,7 +138,7 @@
       fila.innerHTML = `
         <div class="quien">
           <div class="nombre"></div>
-          <div class="detalle">${p.telefono ? `<span>${p.telefono.replace(/(\d{3})(\d{3})(\d{4})/, '$1 $2 $3')}</span>` : ''}<span class="etiqueta ${p.rol}">${p.rol === 'admin' ? 'Admin' : 'Barista'}</span>${p.activo ? '' : '<span class="etiqueta">Sin acceso</span>'}</div>
+          <div class="detalle">${p.usuario ? `<span>Usuario: <strong>${p.usuario}</strong></span>` : ''}<span class="etiqueta ${p.rol}">${p.rol === 'admin' ? 'Admin' : 'Barista'}</span>${p.activo ? '' : '<span class="etiqueta">Sin acceso</span>'}</div>
         </div>
         <div class="acciones">
           <button class="mini" data-accion="clave">Cambiar contraseña</button>
@@ -165,18 +176,18 @@
     e.preventDefault();
     aviso('avisoAlta', '');
     const nombre = $('aNombre').value.trim();
-    let tel = $('aTel').value.replace(/\D/g, '');
-    if (tel.length === 12 && tel.startsWith('52')) tel = tel.slice(2);
+    const usuario = limpiarUsuario($('aUsuario').value);
     const clave = $('aClave').value;
     if (nombre.length < 2) return aviso('avisoAlta', 'Escribe el nombre.');
-    if (tel.length !== 10) return aviso('avisoAlta', 'El celular debe tener 10 dígitos.');
+    if (!/^[a-z0-9._-]{2,30}$/.test(usuario)) return aviso('avisoAlta', 'El usuario debe tener de 2 a 30 letras o números, sin espacios.');
     if (clave.length < 8) return aviso('avisoAlta', 'La contraseña debe tener al menos 8 caracteres.');
 
     $('btnAlta').disabled = true;
     try {
-      await llamarFuncion({ accion: 'crear', nombre, telefono: tel, clave, rol: $('aRol').value });
-      aviso('avisoAlta', `${nombre} ya puede entrar a la caja con su celular ${tel}.`, 'ok');
+      await llamarFuncion({ accion: 'crear', nombre, usuario, clave, rol: $('aRol').value });
+      aviso('avisoAlta', `${nombre} ya puede entrar a la caja con el usuario "${usuario}".`, 'ok');
       e.target.reset();
+      usuarioEditado = false;
       cargarLista();
     } catch (err) {
       aviso('avisoAlta', err.message);
@@ -190,6 +201,22 @@
     input.type = input.type === 'password' ? 'text' : 'password';
     b.textContent = input.type === 'password' ? 'Ver' : 'Ocultar';
   }));
+
+  // Usuario sugerido a partir del nombre ("María José" → "maria"), hasta que lo editen a mano.
+  function limpiarUsuario(t) {
+    return t.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^a-z0-9._-]/g, '');
+  }
+  let usuarioEditado = false;
+  $('aUsuario').addEventListener('input', () => { usuarioEditado = true; });
+  $('aNombre').addEventListener('input', () => {
+    if (!usuarioEditado) $('aUsuario').value = limpiarUsuario($('aNombre').value.split(/\s+/)[0] || '');
+  });
+
+  $('salir').addEventListener('click', async (e) => {
+    e.preventDefault();
+    await sb.auth.signOut();
+    location.href = '../caja/';
+  });
 
   arrancar();
 </script>

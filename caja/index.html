@@ -102,10 +102,10 @@
   <!-- 1. Inicio de sesión -->
   <section id="vistaLogin" class="panel" hidden>
     <h1>Caja · Sellos</h1>
-    <p class="sub">Entra con tu celular y tu contraseña.</p>
+    <p class="sub">Entra con tu usuario y tu contraseña.</p>
     <form id="formLogin">
-      <label for="correo">Celular</label>
-      <input id="correo" type="text" inputmode="tel" autocomplete="username" placeholder="10 dígitos" required>
+      <label for="correo">Usuario</label>
+      <input id="correo" type="text" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="Ej. lua" required>
       <label for="clave">Contraseña</label>
       <input id="clave" type="password" autocomplete="current-password" required>
       <button class="btn" type="submit">Entrar</button>
@@ -121,13 +121,16 @@
       <button class="btn" type="submit">Buscar</button>
     </form>
     <div id="avisoEscanear" class="aviso error" hidden></div>
+    <button class="btn secundario" id="btnNuevoCliente" type="button">+ Registrar cliente nuevo</button>
 
     <!-- Alta en caja para clientes sin smartphone: aparece al buscar un celular que no existe -->
     <form id="altaRapida" class="panel" style="margin-top:16px" hidden>
       <h1>Registrar cliente</h1>
-      <p class="sub">Celular <strong id="altaTel"></strong>. En sus siguientes visitas, búscalo por este número.</p>
+      <p class="sub">Para clientes que no escanean el QR. En sus siguientes visitas, búscalo por su celular.</p>
       <label for="altaNombre">Nombre</label>
       <input id="altaNombre" type="text" maxlength="60" autocomplete="off">
+      <label for="altaCel">Celular</label>
+      <input id="altaCel" type="tel" inputmode="tel" placeholder="10 dígitos" autocomplete="off">
       <button class="btn" id="btnAlta" type="submit">Registrar y continuar</button>
       <button class="btn secundario" id="btnCancelarAlta" type="button">Cancelar</button>
       <div id="avisoAlta" class="aviso error" hidden></div>
@@ -176,7 +179,7 @@
   let volverTimer = null;
 
   function mostrar(vista) {
-    if (vista !== 'vistaEscanear' && $('altaRapida')) $('altaRapida').hidden = true;
+    if (vista !== 'vistaEscanear' && $('altaRapida')) { $('altaRapida').hidden = true; $('btnNuevoCliente').hidden = false; }
     vistas.forEach((v) => ($(v).hidden = v !== vista));
     if (vista === 'vistaEscanear') iniciarCamara(); else detenerCamara();
   }
@@ -204,13 +207,12 @@
     return d.length === 10 ? d : null;
   }
 
-  // El personal entra con su celular; Auth lo guarda como un correo interno
+  // El personal entra con su usuario; Auth lo guarda como un correo interno
   // (ver base_de_datos/funciones/gestionar-personal). Un correo real también funciona.
   function usuarioAuth(texto) {
-    const t = texto.trim().toLowerCase();
+    const t = texto.trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
     if (t.includes('@')) return t;
-    const tel = telefono(t);
-    return tel ? `${tel}@tel.reformanda.invalid` : null;
+    return /^[a-z0-9._-]{2,30}$/.test(t) ? `${t}@personal.reformanda.invalid` : null;
   }
 
   // ---------- Sesión ----------
@@ -244,10 +246,10 @@
     aviso('avisoLogin', '');
     e.target.classList.add('cargando');
     const email = usuarioAuth($('correo').value);
-    if (!email) { e.target.classList.remove('cargando'); aviso('avisoLogin', 'Escribe tu celular a 10 dígitos.'); return; }
+    if (!email) { e.target.classList.remove('cargando'); aviso('avisoLogin', 'Escribe tu usuario, sin espacios.'); return; }
     const { error } = await sb.auth.signInWithPassword({ email, password: $('clave').value });
     e.target.classList.remove('cargando');
-    if (error) { aviso('avisoLogin', 'Celular o contraseña incorrectos.'); return; }
+    if (error) { aviso('avisoLogin', 'Usuario o contraseña incorrectos.'); return; }
     $('clave').value = '';
     arrancar(true);
   });
@@ -309,7 +311,7 @@
       aviso('avisoEscanear', `No existe el miembro ${valor}.`);
       return;
     }
-    $('altaRapida').hidden = true;
+    ocultarAlta();
     clienteActual = data;
     $('numero').value = '';
     aviso('avisoCliente', '');
@@ -364,34 +366,43 @@
   $('btnSiguiente').addEventListener('click', () => { clearTimeout(volverTimer); mostrar('vistaEscanear'); });
 
   // ---------- Alta en caja ----------
-  let altaTelefono = null;
+  // Sin teléfono: se abre vacío desde el botón; con teléfono: viene de una búsqueda sin resultado.
   function mostrarAlta(tel) {
-    altaTelefono = tel;
-    const bonito = tel.replace(/(\d{3})(\d{3})(\d{4})/, '$1 $2 $3');
-    aviso('avisoEscanear', `No hay ninguna tarjeta con el celular ${bonito}.`);
+    const bonito = tel ? tel.replace(/(\d{3})(\d{3})(\d{4})/, '$1 $2 $3') : '';
+    aviso('avisoEscanear', tel ? `No hay ninguna tarjeta con el celular ${bonito}.` : '');
     aviso('avisoAlta', '');
-    $('altaTel').textContent = bonito;
     $('altaNombre').value = '';
+    $('altaCel').value = bonito;
     $('altaRapida').hidden = false;
+    $('btnNuevoCliente').hidden = true;
     $('altaNombre').focus();
   }
+
+  function ocultarAlta() {
+    $('altaRapida').hidden = true;
+    $('btnNuevoCliente').hidden = false;
+  }
+
+  $('btnNuevoCliente').addEventListener('click', () => mostrarAlta(null));
 
   $('altaRapida').addEventListener('submit', async (e) => {
     e.preventDefault();
     const nombre = $('altaNombre').value.trim();
+    const tel = telefono($('altaCel').value);
     if (nombre.length < 2) { aviso('avisoAlta', 'Escribe el nombre del cliente.'); return; }
+    if (!tel) { aviso('avisoAlta', 'El celular debe tener 10 dígitos.'); return; }
     $('btnAlta').disabled = true;
-    const { error } = await sb.rpc('registrar_cliente', { p_nombre: nombre, p_telefono: altaTelefono });
+    const { error } = await sb.rpc('registrar_cliente', { p_nombre: nombre, p_telefono: tel });
     $('btnAlta').disabled = false;
     if (error) { aviso('avisoAlta', mensajeError(error)); return; }
-    $('altaRapida').hidden = true;
+    ocultarAlta();
     aviso('avisoEscanear', '');
-    await buscar('telefono', altaTelefono);
+    await buscar('telefono', tel);
     aviso('avisoCliente', 'Cliente registrado. Ya le puedes poner su primer sello.', 'ok');
   });
 
   $('btnCancelarAlta').addEventListener('click', () => {
-    $('altaRapida').hidden = true;
+    ocultarAlta();
     aviso('avisoEscanear', '');
   });
 
