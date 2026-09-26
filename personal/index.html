@@ -38,7 +38,7 @@
 <main>
   <header>
     <img src="../img/logo.png" alt="Reformanda">
-    <a href="../caja/">← Caja</a>
+    <a href="../caja/">Ir al escáner →</a>
   </header>
 
   <section id="vistaSinSesion" class="panel" hidden>
@@ -56,12 +56,12 @@
 
     <section class="panel">
       <h2>Agregar a alguien</h2>
-      <p class="sub">Dale su correo y la contraseña para que entre a la caja.</p>
+      <p class="sub">Entrará a la caja con su celular y esta contraseña.</p>
       <form id="formAlta" novalidate>
         <label for="aNombre">Nombre</label>
         <input id="aNombre" type="text" maxlength="60" autocomplete="off">
-        <label for="aEmail">Correo</label>
-        <input id="aEmail" type="email" autocomplete="off">
+        <label for="aTel">Celular</label>
+        <input id="aTel" type="tel" inputmode="tel" placeholder="10 dígitos" autocomplete="off">
         <label for="aClave">Contraseña <span class="opc">(mínimo 8 caracteres)</span></label>
         <div class="ojo">
           <input id="aClave" type="password" autocomplete="new-password">
@@ -117,7 +117,7 @@
   }
 
   async function cargarLista() {
-    const { data, error } = await sb.from('personal').select('id, nombre, rol, activo, creado_en').order('creado_en');
+    const { data, error } = await sb.from('personal').select('id, nombre, telefono, rol, activo, creado_en').order('creado_en');
     if (error) { $('lista').textContent = 'No se pudo cargar la lista.'; return; }
     $('lista').innerHTML = '';
     for (const p of data) {
@@ -127,7 +127,7 @@
       fila.innerHTML = `
         <div class="quien">
           <div class="nombre"></div>
-          <div class="detalle"><span class="etiqueta ${p.rol}">${p.rol === 'admin' ? 'Admin' : 'Barista'}</span>${p.activo ? '' : '<span class="etiqueta">Sin acceso</span>'}</div>
+          <div class="detalle">${p.telefono ? `<span>${p.telefono.replace(/(\d{3})(\d{3})(\d{4})/, '$1 $2 $3')}</span>` : ''}<span class="etiqueta ${p.rol}">${p.rol === 'admin' ? 'Admin' : 'Barista'}</span>${p.activo ? '' : '<span class="etiqueta">Sin acceso</span>'}</div>
         </div>
         <div class="acciones">
           <button class="mini" data-accion="clave">Cambiar contraseña</button>
@@ -165,16 +165,17 @@
     e.preventDefault();
     aviso('avisoAlta', '');
     const nombre = $('aNombre').value.trim();
-    const email = $('aEmail').value.trim();
+    let tel = $('aTel').value.replace(/\D/g, '');
+    if (tel.length === 12 && tel.startsWith('52')) tel = tel.slice(2);
     const clave = $('aClave').value;
     if (nombre.length < 2) return aviso('avisoAlta', 'Escribe el nombre.');
-    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return aviso('avisoAlta', 'El correo no es válido.');
+    if (tel.length !== 10) return aviso('avisoAlta', 'El celular debe tener 10 dígitos.');
     if (clave.length < 8) return aviso('avisoAlta', 'La contraseña debe tener al menos 8 caracteres.');
 
     $('btnAlta').disabled = true;
     try {
-      await llamarFuncion({ accion: 'crear', nombre, email, clave, rol: $('aRol').value });
-      aviso('avisoAlta', `${nombre} ya puede entrar a la caja con ${email}.`, 'ok');
+      await llamarFuncion({ accion: 'crear', nombre, telefono: tel, clave, rol: $('aRol').value });
+      aviso('avisoAlta', `${nombre} ya puede entrar a la caja con su celular ${tel}.`, 'ok');
       e.target.reset();
       cargarLista();
     } catch (err) {

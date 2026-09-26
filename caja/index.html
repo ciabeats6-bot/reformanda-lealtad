@@ -102,10 +102,10 @@
   <!-- 1. Inicio de sesión -->
   <section id="vistaLogin" class="panel" hidden>
     <h1>Caja · Sellos</h1>
-    <p class="sub">Entra con tu cuenta de barista.</p>
+    <p class="sub">Entra con tu celular y tu contraseña.</p>
     <form id="formLogin">
-      <label for="correo">Correo</label>
-      <input id="correo" type="email" autocomplete="username" required>
+      <label for="correo">Celular</label>
+      <input id="correo" type="text" inputmode="tel" autocomplete="username" placeholder="10 dígitos" required>
       <label for="clave">Contraseña</label>
       <input id="clave" type="password" autocomplete="current-password" required>
       <button class="btn" type="submit">Entrar</button>
@@ -192,8 +192,17 @@
     return d.length === 10 ? d : null;
   }
 
+  // El personal entra con su celular; Auth lo guarda como un correo interno
+  // (ver base_de_datos/funciones/gestionar-personal). Un correo real también funciona.
+  function usuarioAuth(texto) {
+    const t = texto.trim().toLowerCase();
+    if (t.includes('@')) return t;
+    const tel = telefono(t);
+    return tel ? `${tel}@tel.reformanda.invalid` : null;
+  }
+
   // ---------- Sesión ----------
-  async function arrancar() {
+  async function arrancar(recienEntro = false) {
     const { data: { session } } = await sb.auth.getSession();
     if (!session) { $('quien').hidden = true; mostrar('vistaLogin'); return; }
 
@@ -212,6 +221,8 @@
     if (cfg) config = cfg;
     $('quienNombre').textContent = yo?.nombre || session.user.email;
     $('linkPersonal').hidden = yo?.rol !== 'admin';
+    // Al iniciar sesión, el admin llega directo a Personal; el barista, al escáner.
+    if (recienEntro && yo?.rol === 'admin') { location.href = '../personal/'; return; }
     $('quien').hidden = false;
     mostrar('vistaEscanear');
   }
@@ -220,11 +231,13 @@
     e.preventDefault();
     aviso('avisoLogin', '');
     e.target.classList.add('cargando');
-    const { error } = await sb.auth.signInWithPassword({ email: $('correo').value.trim(), password: $('clave').value });
+    const email = usuarioAuth($('correo').value);
+    if (!email) { e.target.classList.remove('cargando'); aviso('avisoLogin', 'Escribe tu celular a 10 dígitos.'); return; }
+    const { error } = await sb.auth.signInWithPassword({ email, password: $('clave').value });
     e.target.classList.remove('cargando');
-    if (error) { aviso('avisoLogin', 'Correo o contraseña incorrectos.'); return; }
+    if (error) { aviso('avisoLogin', 'Celular o contraseña incorrectos.'); return; }
     $('clave').value = '';
-    arrancar();
+    arrancar(true);
   });
 
   $('salir').addEventListener('click', async () => {
