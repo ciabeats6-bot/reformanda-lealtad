@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#FAF7F2">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Reformanda">
+<title>Mi tarjeta Reformanda</title>
+<link rel="apple-touch-icon" href="../img/logo.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,600;9..40,700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../comun.css">
+<style>
+  .pase { background: var(--tarjeta); border: 1px solid var(--linea); border-radius: 22px; overflow: hidden; box-shadow: 0 8px 30px rgba(60, 40, 20, .08); }
+  .pase-top { display: flex; justify-content: space-between; align-items: center; padding: 16px 18px; }
+  .pase-top img { height: 30px; width: auto; }
+  .etq { font-size: 11px; font-weight: 700; letter-spacing: .08em; color: var(--rojo); text-transform: uppercase; }
+  .cuenta { text-align: right; }
+  .cuenta strong { display: block; font-size: 22px; font-variant-numeric: tabular-nums; }
+  .banner { display: block; width: 100%; transition: opacity .3s; }
+  .datos { display: flex; justify-content: space-between; gap: 12px; padding: 14px 18px 4px; }
+  .datos > div { flex: 1; min-width: 0; }
+  .datos > div:last-child { text-align: right; }
+  .datos .val { font-size: 17px; font-weight: 600; margin-top: 2px; }
+  .qr { padding: 18px 18px 22px; text-align: center; }
+  .qr-caja { display: inline-block; background: #fff; padding: 10px; border-radius: 12px; border: 1px solid var(--linea); }
+  .qr-caja svg { display: block; width: 190px; height: 190px; }
+  .num { margin-top: 8px; font-weight: 600; letter-spacing: .06em; font-variant-numeric: tabular-nums; color: var(--suave); }
+  .listo { background: var(--verde); color: #fff; text-align: center; padding: 12px; font-weight: 700; }
+  .pop { animation: pop .5s ease; }
+  @keyframes pop { 40% { transform: scale(1.25); color: var(--rojo); } }
+  .consejo { margin-top: 18px; }
+  .consejo h2 { font-size: 16px; margin: 0 0 4px; }
+</style>
+</head>
+<body>
+<main>
+  <div id="bienvenida" class="aviso ok" hidden style="margin: 0 0 16px">¡Listo! Esta es tu tarjeta. Enséñala en caja con cada compra.</div>
+
+  <section id="vistaPase" class="pase" hidden>
+    <div class="pase-top">
+      <img src="../img/logo.png" alt="Reformanda">
+      <div class="cuenta"><span class="etq">Sellos</span><strong id="sellos">0/6</strong></div>
+    </div>
+    <img class="banner" id="banner" alt="">
+    <div id="listo" class="listo" hidden></div>
+    <div class="datos">
+      <div><div class="etq">Miembro</div><div class="val" id="nombre"></div></div>
+      <div><div class="etq">Premio</div><div class="val" id="premio"></div></div>
+    </div>
+    <div class="qr">
+      <div class="qr-caja" id="qr"></div>
+      <div class="num" id="numero"></div>
+    </div>
+  </section>
+
+  <section id="consejo" class="panel consejo" hidden>
+    <h2>Tenla siempre a la mano</h2>
+    <p class="sub" id="consejoTxt">En el iPhone: botón Compartir → “Agregar a pantalla de inicio”. En Android: menú ⋮ → “Agregar a la pantalla principal”.</p>
+  </section>
+
+  <section id="vistaError" class="panel" hidden>
+    <h1>No encontramos tu tarjeta</h1>
+    <p class="sub">El link está incompleto o la tarjeta ya no existe. Si ya te registraste, pide ayuda en caja.</p>
+    <a class="btn" href="../registro/">Crear una tarjeta</a>
+  </section>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+<script src="../config.js"></script>
+<script>
+  const { SUPABASE_URL, SUPABASE_KEY, CLAVE_LOCAL } = window.REFORMANDA;
+  const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false } });
+  const $ = (id) => document.getElementById(id);
+
+  const params = new URLSearchParams(location.search);
+  let token = params.get('t');
+  try {
+    if (token) localStorage.setItem(CLAVE_LOCAL, token);
+    else token = localStorage.getItem(CLAVE_LOCAL);
+  } catch (_) {}
+
+  // Deja el link con el token para que "Agregar a pantalla de inicio" lo conserve.
+  if (token && !params.get('t')) history.replaceState(null, '', '?t=' + encodeURIComponent(token));
+  if (params.get('nueva')) {
+    $('bienvenida').hidden = false;
+    history.replaceState(null, '', '?t=' + encodeURIComponent(token));
+  }
+
+  let sellosPrevios = null;
+
+  function pintar(t) {
+    const lleno = t.sellos_actuales >= t.sellos_para_premio;
+    $('sellos').textContent = `${t.sellos_actuales}/${t.sellos_para_premio}`;
+    $('banner').src = `../img/sellos_${Math.min(t.sellos_actuales, 6)}.png`;
+    $('banner').alt = `${t.sellos_actuales} de ${t.sellos_para_premio} sellos`;
+    $('nombre').textContent = t.nombre;
+    $('premio').textContent = t.premio;
+    $('numero').textContent = t.numero_miembro;
+    $('listo').hidden = !lleno;
+    $('listo').textContent = `¡Tarjeta completa! Pide tu ${t.premio.toLowerCase()} en caja.`;
+
+    if (sellosPrevios === null) {
+      const qr = qrcode(0, 'M');
+      qr.addData(t.numero_miembro);
+      qr.make();
+      $('qr').innerHTML = qr.createSvgTag({ cellSize: 6, margin: 0, scalable: true });
+    } else if (t.sellos_actuales !== sellosPrevios) {
+      $('sellos').classList.remove('pop'); void $('sellos').offsetWidth; $('sellos').classList.add('pop');
+      if (navigator.vibrate) navigator.vibrate(80);
+    }
+    sellosPrevios = t.sellos_actuales;
+  }
+
+  async function cargar() {
+    if (!token) return mostrarError();
+    const { data, error } = await sb.rpc('ver_tarjeta', { p_token: token });
+    if (error) return; // sin conexión: deja lo último que se vio
+    const t = Array.isArray(data) ? data[0] : data;
+    if (!t) return mostrarError();
+    pintar(t);
+    $('vistaPase').hidden = false;
+    $('consejo').hidden = window.matchMedia('(display-mode: standalone)').matches || navigator.standalone === true;
+  }
+
+  function mostrarError() {
+    $('vistaPase').hidden = true;
+    $('consejo').hidden = true;
+    $('vistaError').hidden = false;
+    try { localStorage.removeItem(CLAVE_LOCAL); } catch (_) {}
+  }
+
+  // Se actualiza sola mientras está abierta (cuando le ponen un sello en caja).
+  cargar();
+  setInterval(() => { if (document.visibilityState === 'visible') cargar(); }, 8000);
+  document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') cargar(); });
+</script>
+</body>
+</html>

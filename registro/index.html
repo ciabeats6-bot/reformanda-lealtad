@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#FAF7F2">
+<title>Tarjeta Reformanda</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,600;9..40,700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="../comun.css">
+</head>
+<body>
+<main>
+  <img class="logo" src="../img/logo.png" alt="Reformanda">
+
+  <!-- Ya tiene tarjeta en este teléfono -->
+  <section id="yaTiene" class="panel" hidden>
+    <h1>Ya tienes tu tarjeta</h1>
+    <p class="sub">En este teléfono ya hay una tarjeta de lealtad guardada.</p>
+    <a class="btn" id="verMia" href="../tarjeta/">Ver mi tarjeta</a>
+  </section>
+
+  <!-- Formulario -->
+  <section id="vistaForm" class="panel">
+    <h1>Tu tarjeta de sellos</h1>
+    <p class="sub">Junta 6 sellos y tu siguiente <strong id="premioTxt">café americano</strong> va por nuestra cuenta. Te toma 30 segundos.</p>
+
+    <form id="form" novalidate>
+      <label for="nombre">Nombre</label>
+      <input id="nombre" type="text" autocomplete="name" maxlength="60" required>
+
+      <label for="telefono">Celular</label>
+      <input id="telefono" type="tel" inputmode="tel" autocomplete="tel" placeholder="10 dígitos" required>
+
+      <label for="email">Correo <span class="opc">(opcional)</span></label>
+      <input id="email" type="email" inputmode="email" autocomplete="email">
+
+      <label for="nacimiento">Cumpleaños <span class="opc">(opcional)</span></label>
+      <input id="nacimiento" type="date" autocomplete="bday">
+
+      <label class="check" for="promos">
+        <input id="promos" type="checkbox">
+        <span>Quiero enterarme de promociones de Reformanda.</span>
+      </label>
+
+      <button class="btn" id="enviar" type="submit">Crear mi tarjeta</button>
+      <div id="aviso" class="aviso error" hidden></div>
+    </form>
+
+    <p class="letra-chica">Al crear tu tarjeta aceptas nuestro <a href="../privacidad/" style="color:inherit">aviso de privacidad</a>. Usamos tus datos solo para tu tarjeta de lealtad en Reformanda Barra de Café.</p>
+  </section>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="../config.js"></script>
+<script>
+  const { SUPABASE_URL, SUPABASE_KEY, CLAVE_LOCAL } = window.REFORMANDA;
+  const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, { auth: { persistSession: false } });
+  const $ = (id) => document.getElementById(id);
+
+  const leer = () => { try { return localStorage.getItem(CLAVE_LOCAL); } catch (_) { return null; } };
+  const guardar = (t) => { try { localStorage.setItem(CLAVE_LOCAL, t); } catch (_) {} };
+
+  if (leer()) {
+    $('yaTiene').hidden = false;
+    $('vistaForm').hidden = true;
+  }
+
+  function error(texto) {
+    $('aviso').textContent = texto;
+    $('aviso').hidden = !texto;
+  }
+
+  $('form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    error('');
+    const nombre = $('nombre').value.trim();
+    const telefono = $('telefono').value.replace(/\D/g, '');
+    if (nombre.length < 2) { error('Escribe tu nombre.'); $('nombre').focus(); return; }
+    if (telefono.length !== 10 && !(telefono.length === 12 && telefono.startsWith('52'))) {
+      error('El celular debe tener 10 dígitos.'); $('telefono').focus(); return;
+    }
+
+    $('enviar').disabled = true;
+    $('enviar').textContent = 'Creando…';
+    const { data, error: err } = await sb.rpc('registrar_cliente', {
+      p_nombre: nombre,
+      p_telefono: telefono,
+      p_email: $('email').value.trim() || null,
+      p_fecha_nacimiento: $('nacimiento').value || null,
+      p_acepta_promociones: $('promos').checked,
+    });
+    $('enviar').disabled = false;
+    $('enviar').textContent = 'Crear mi tarjeta';
+
+    if (err) { error(err.message || 'Algo falló. Intenta de nuevo.'); return; }
+    const fila = Array.isArray(data) ? data[0] : data;
+    guardar(fila.token_tarjeta);
+    location.href = '../tarjeta/?t=' + encodeURIComponent(fila.token_tarjeta) + '&nueva=1';
+  });
+</script>
+</body>
+</html>

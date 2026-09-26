@@ -1,0 +1,54 @@
+/* Estilos compartidos de las páginas del cliente (registro y tarjeta) */
+:root {
+  --fondo: #FAF7F2;
+  --tarjeta: #FFFFFF;
+  --tinta: #1E1E1E;
+  --suave: #6B645C;
+  --linea: #E6DFD4;
+  --rojo: #B01B31;
+  --rojo-oscuro: #8C1526;
+  --verde: #1F7A4D;
+  --verde-fondo: #E7F4EC;
+  --error-fondo: #FBE9EC;
+  --radio: 18px;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--fondo); color: var(--tinta); }
+body {
+  font-family: "DM Sans", system-ui, -apple-system, sans-serif;
+  min-height: 100dvh;
+  padding: max(16px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom));
+  -webkit-tap-highlight-color: transparent;
+}
+main { max-width: 480px; margin: 0 auto; }
+[hidden] { display: none !important; }
+
+.logo { display: block; height: 44px; width: auto; margin: 8px auto 20px; }
+.panel { background: var(--tarjeta); border: 1px solid var(--linea); border-radius: var(--radio); padding: 20px; }
+h1 { font-size: 24px; margin: 0 0 6px; line-height: 1.2; }
+p.sub { margin: 0 0 8px; color: var(--suave); line-height: 1.45; }
+
+label { display: block; font-size: 14px; font-weight: 600; margin: 16px 0 6px; }
+label .opc { font-weight: 400; color: var(--suave); }
+input[type=text], input[type=tel], input[type=email], input[type=date] {
+  width: 100%; font: inherit; font-size: 18px; padding: 14px 16px; min-height: 52px;
+  border: 1.5px solid var(--linea); border-radius: 12px; background: var(--fondo); color: var(--tinta);
+  -webkit-appearance: none; appearance: none;
+}
+input:focus { outline: none; border-color: var(--rojo); }
+.check { display: flex; gap: 10px; align-items: flex-start; font-weight: 400; font-size: 15px; line-height: 1.4; }
+.check input { width: 22px; height: 22px; margin: 0; flex: none; accent-color: var(--rojo); }
+
+.btn {
+  display: block; width: 100%; font: inherit; font-size: 19px; font-weight: 700; text-align: center; text-decoration: none;
+  padding: 17px; border-radius: 14px; border: 0; cursor: pointer; margin-top: 20px;
+  background: var(--rojo); color: #fff; transition: transform .08s;
+}
+.btn:active { transform: scale(.98); }
+.btn:disabled { opacity: .5; cursor: default; }
+.btn.secundario { background: transparent; color: var(--tinta); border: 1.5px solid var(--linea); font-size: 16px; }
+
+.aviso { border-radius: 12px; padding: 14px 16px; margin-top: 16px; font-weight: 600; }
+.aviso.ok { background: var(--verde-fondo); color: var(--verde); }
+.aviso.error { background: var(--error-fondo); color: var(--rojo-oscuro); }
+.letra-chica { font-size: 13px; color: var(--suave); line-height: 1.45; margin: 16px 0 0; }

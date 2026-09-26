@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#FAF7F2">
+<title>Caja Reformanda</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;9..40,600;9..40,700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --fondo: #FAF7F2;
+    --tarjeta: #FFFFFF;
+    --tinta: #1E1E1E;
+    --suave: #6B645C;
+    --linea: #E6DFD4;
+    --rojo: #B01B31;
+    --rojo-oscuro: #8C1526;
+    --verde: #1F7A4D;
+    --verde-fondo: #E7F4EC;
+    --error-fondo: #FBE9EC;
+    --radio: 18px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--fondo); color: var(--tinta); }
+  body {
+    font-family: "DM Sans", system-ui, -apple-system, sans-serif;
+    min-height: 100dvh;
+    padding: max(16px, env(safe-area-inset-top)) 16px max(16px, env(safe-area-inset-bottom));
+    -webkit-tap-highlight-color: transparent;
+  }
+  main { max-width: 560px; margin: 0 auto; }
+  [hidden] { display: none !important; }
+
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
+  header img { height: 40px; width: auto; }
+  .quien { font-size: 14px; color: var(--suave); text-align: right; }
+  .quien button { font: inherit; color: var(--rojo); background: none; border: 0; padding: 4px 0; cursor: pointer; text-decoration: underline; }
+
+  .panel { background: var(--tarjeta); border: 1px solid var(--linea); border-radius: var(--radio); padding: 20px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  p.sub { margin: 0 0 18px; color: var(--suave); }
+
+  label { display: block; font-size: 14px; font-weight: 600; margin: 14px 0 6px; }
+  input {
+    width: 100%; font: inherit; font-size: 18px; padding: 14px 16px;
+    border: 1.5px solid var(--linea); border-radius: 12px; background: var(--fondo); color: var(--tinta);
+  }
+  input:focus { outline: none; border-color: var(--rojo); }
+
+  .btn {
+    display: block; width: 100%; font: inherit; font-size: 20px; font-weight: 700;
+    padding: 18px; border-radius: 14px; border: 0; cursor: pointer; margin-top: 16px;
+    background: var(--rojo); color: #fff; transition: transform .08s, background .15s;
+  }
+  .btn:active { transform: scale(.98); }
+  .btn:disabled { opacity: .4; cursor: default; transform: none; }
+  .btn.secundario { background: transparent; color: var(--tinta); border: 1.5px solid var(--linea); font-size: 17px; }
+  .btn.premio { background: var(--verde); }
+
+  #lector { width: 100%; aspect-ratio: 1; border-radius: var(--radio); overflow: hidden; background: #111; position: relative; }
+  #lector video { object-fit: cover; }
+  .camara-aviso { color: #ddd; display: grid; place-items: center; height: 100%; text-align: center; padding: 24px; font-size: 16px; }
+
+  .manual { display: flex; gap: 8px; margin-top: 16px; }
+  .manual .prefijo { display: grid; place-items: center; padding: 0 14px; border: 1.5px solid var(--linea); border-radius: 12px; font-weight: 700; color: var(--suave); }
+  .manual input { flex: 1; min-width: 0; }
+  .manual .btn { width: auto; margin: 0; padding: 0 20px; font-size: 17px; }
+
+  .cliente-nombre { font-size: 26px; font-weight: 700; margin: 0; }
+  .cliente-num { color: var(--suave); margin: 2px 0 16px; font-variant-numeric: tabular-nums; }
+  .banner { width: 100%; border-radius: 12px; display: block; border: 1px solid var(--linea); }
+  .conteo { font-size: 18px; margin: 14px 0 0; text-align: center; }
+  .conteo strong { font-size: 30px; color: var(--rojo); }
+
+  .aviso { border-radius: 12px; padding: 14px 16px; margin-top: 16px; font-weight: 600; font-size: 17px; }
+  .aviso.ok { background: var(--verde-fondo); color: var(--verde); }
+  .aviso.error { background: var(--error-fondo); color: var(--rojo-oscuro); }
+
+  .cargando { opacity: .6; pointer-events: none; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <img src="../img/logo.png" alt="Reformanda">
+    <div class="quien" id="quien" hidden>
+      <div id="quienNombre"></div>
+      <button id="salir" type="button">Cerrar sesión</button>
+    </div>
+  </header>
+
+  <!-- 1. Inicio de sesión -->
+  <section id="vistaLogin" class="panel" hidden>
+    <h1>Caja · Sellos</h1>
+    <p class="sub">Entra con tu cuenta de barista.</p>
+    <form id="formLogin">
+      <label for="correo">Correo</label>
+      <input id="correo" type="email" autocomplete="username" required>
+      <label for="clave">Contraseña</label>
+      <input id="clave" type="password" autocomplete="current-password" required>
+      <button class="btn" type="submit">Entrar</button>
+    </form>
+    <div id="avisoLogin" class="aviso error" hidden></div>
+  </section>
+
+  <!-- 2. Escanear -->
+  <section id="vistaEscanear" hidden>
+    <div id="lector"><div class="camara-aviso" id="camaraAviso">Abriendo la cámara…</div></div>
+    <form class="manual" id="formManual">
+      <span class="prefijo">RFM-</span>
+      <input id="numero" inputmode="numeric" pattern="[0-9]*" placeholder="Número de miembro" autocomplete="off">
+      <button class="btn" type="submit">Buscar</button>
+    </form>
+    <div id="avisoEscanear" class="aviso error" hidden></div>
+  </section>
+
+  <!-- 3. Cliente -->
+  <section id="vistaCliente" class="panel" hidden>
+    <p class="cliente-nombre" id="cNombre"></p>
+    <p class="cliente-num" id="cNumero"></p>
+    <img class="banner" id="cBanner" alt="">
+    <p class="conteo"><strong id="cSellos">0</strong> de <span id="cMeta">6</span> sellos</p>
+
+    <button class="btn" id="btnSello" type="button">Poner sello</button>
+    <button class="btn premio" id="btnCanje" type="button" hidden>Canjear premio</button>
+    <div id="avisoCliente" class="aviso" hidden></div>
+    <button class="btn secundario" id="btnSiguiente" type="button">Siguiente cliente</button>
+  </section>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script>
+  const SUPABASE_URL = 'https://ydcrucibujygrwggfcai.supabase.co';
+  const SUPABASE_KEY = 'sb_publishable_cDyaRWSd7RI6vNLmqkoI3Q_ipup1ZKR'; // llave pública: es seguro que viva aquí
+  const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+  const $ = (id) => document.getElementById(id);
+  const vistas = ['vistaLogin', 'vistaEscanear', 'vistaCliente'];
+  let config = { sellos_para_premio: 6, premio: 'Café americano gratis' };
+  let clienteActual = null;
+  let lector = null;
+  let volverTimer = null;
+
+  function mostrar(vista) {
+    vistas.forEach((v) => ($(v).hidden = v !== vista));
+    if (vista === 'vistaEscanear') iniciarCamara(); else detenerCamara();
+  }
+
+  function aviso(id, texto, tipo = 'error') {
+    const el = $(id);
+    el.textContent = texto || '';
+    el.className = 'aviso ' + tipo;
+    el.hidden = !texto;
+  }
+
+  function vibrar(ms) { if (navigator.vibrate) navigator.vibrate(ms); }
+
+  // Acepta "RFM-000012", "rfm-12" o "12"
+  function normalizar(texto) {
+    const t = String(texto).trim().toUpperCase();
+    const m = t.match(/^(?:RFM-?)?(\d{1,6})$/);
+    return m ? 'RFM-' + m[1].padStart(6, '0') : null;
+  }
+
+  // ---------- Sesión ----------
+  async function arrancar() {
+    const { data: { session } } = await sb.auth.getSession();
+    if (!session) { $('quien').hidden = true; mostrar('vistaLogin'); return; }
+
+    const { data: esPersonal, error } = await sb.rpc('es_personal');
+    if (error || !esPersonal) {
+      await sb.auth.signOut();
+      mostrar('vistaLogin');
+      aviso('avisoLogin', 'Esta cuenta no está dada de alta como personal de Reformanda.');
+      return;
+    }
+
+    const [{ data: yo }, { data: cfg }] = await Promise.all([
+      sb.from('personal').select('nombre').eq('id', session.user.id).single(),
+      sb.from('configuracion').select('sellos_para_premio, premio').single(),
+    ]);
+    if (cfg) config = cfg;
+    $('quienNombre').textContent = yo?.nombre || session.user.email;
+    $('quien').hidden = false;
+    mostrar('vistaEscanear');
+  }
+
+  $('formLogin').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    aviso('avisoLogin', '');
+    e.target.classList.add('cargando');
+    const { error } = await sb.auth.signInWithPassword({ email: $('correo').value.trim(), password: $('clave').value });
+    e.target.classList.remove('cargando');
+    if (error) { aviso('avisoLogin', 'Correo o contraseña incorrectos.'); return; }
+    $('clave').value = '';
+    arrancar();
+  });
+
+  $('salir').addEventListener('click', async () => {
+    await sb.auth.signOut();
+    $('quien').hidden = true;
+    mostrar('vistaLogin');
+  });
+
+  // ---------- Cámara ----------
+  async function iniciarCamara() {
+    aviso('avisoEscanear', '');
+    if (lector) return;
+    if (!window.Html5Qrcode) { $('camaraAviso').textContent = 'No se pudo cargar el lector. Escribe el número abajo.'; return; }
+    $('lector').innerHTML = '';
+    lector = new Html5Qrcode('lector', { verbose: false });
+    try {
+      await lector.start(
+        { facingMode: 'environment' },
+        { fps: 10, qrbox: (w, h) => { const s = Math.floor(Math.min(w, h) * 0.7); return { width: s, height: s }; } },
+        (texto) => { const num = normalizar(texto); if (num) { vibrar(40); buscar(num); } },
+        () => {}
+      );
+    } catch (err) {
+      lector = null;
+      $('lector').innerHTML = '<div class="camara-aviso">No hay acceso a la cámara. Dale permiso en el navegador o escribe el número abajo.</div>';
+    }
+  }
+
+  async function detenerCamara() {
+    if (!lector) return;
+    const l = lector; lector = null;
+    try { await l.stop(); l.clear(); } catch (_) {}
+    $('lector').innerHTML = '<div class="camara-aviso" id="camaraAviso">Abriendo la cámara…</div>';
+  }
+
+  $('formManual').addEventListener('submit', (e) => {
+    e.preventDefault();
+    const num = normalizar($('numero').value);
+    if (!num) { aviso('avisoEscanear', 'Escribe solo el número, por ejemplo 12.'); return; }
+    buscar(num);
+  });
+
+  // ---------- Cliente ----------
+  let buscando = false;
+  async function buscar(numero) {
+    if (buscando) return;
+    buscando = true;
+    const { data, error } = await sb.from('clientes')
+      .select('numero_miembro, nombre, sellos_actuales, ultimo_sello_en')
+      .eq('numero_miembro', numero).maybeSingle();
+    buscando = false;
+    if (error) { aviso('avisoEscanear', 'No se pudo consultar. Revisa la conexión.'); return; }
+    if (!data) { aviso('avisoEscanear', `No existe el miembro ${numero}.`); return; }
+    clienteActual = data;
+    $('numero').value = '';
+    aviso('avisoCliente', '');
+    pintarCliente();
+    mostrar('vistaCliente');
+  }
+
+  function pintarCliente() {
+    const c = clienteActual, meta = config.sellos_para_premio;
+    const lleno = c.sellos_actuales >= meta;
+    $('cNombre').textContent = c.nombre;
+    $('cNumero').textContent = c.numero_miembro;
+    $('cSellos').textContent = c.sellos_actuales;
+    $('cMeta').textContent = meta;
+    $('cBanner').src = `../img/sellos_${Math.min(c.sellos_actuales, 6)}.png`;
+    $('cBanner').alt = `${c.sellos_actuales} de ${meta} sellos`;
+    $('btnSello').hidden = lleno;
+    $('btnCanje').hidden = !lleno;
+    $('btnCanje').textContent = `Canjear: ${config.premio}`;
+  }
+
+  // Los errores de la base vienen como texto en español (ver funciones en base_de_datos/)
+  function mensajeError(error) {
+    if (error?.code === '42501') return 'Tu cuenta no tiene permiso para esto.';
+    return error?.message || 'Algo falló. Intenta de nuevo.';
+  }
+
+  async function accion(boton, rpc, alTerminar) {
+    boton.disabled = true;
+    const { data, error } = await sb.rpc(rpc, { p_numero_miembro: clienteActual.numero_miembro });
+    boton.disabled = false;
+    if (error) { vibrar([60, 60, 60]); aviso('avisoCliente', mensajeError(error)); return; }
+    const fila = Array.isArray(data) ? data[0] : data;
+    clienteActual.sellos_actuales = fila.sellos_actuales;
+    pintarCliente();
+    vibrar(80);
+    aviso('avisoCliente', alTerminar(fila), 'ok');
+    clearTimeout(volverTimer);
+    volverTimer = setTimeout(() => mostrar('vistaEscanear'), 6000);
+  }
+
+  $('btnSello').addEventListener('click', (e) => accion(e.currentTarget, 'poner_sello', (f) =>
+    f.premio_listo ? `¡Tarjeta completa! Ya puede canjear su ${config.premio.toLowerCase()}.`
+                   : `Sello puesto. Le faltan ${f.sellos_para_premio - f.sellos_actuales}.`));
+
+  $('btnCanje').addEventListener('click', (e) => {
+    if (!confirm(`¿Entregar ${config.premio.toLowerCase()} a ${clienteActual.nombre}?`)) return;
+    accion(e.currentTarget, 'canjear_premio', (f) => `Premio canjeado: ${f.premio}. La tarjeta vuelve a ${f.sellos_actuales}.`);
+  });
+
+  $('btnSiguiente').addEventListener('click', () => { clearTimeout(volverTimer); mostrar('vistaEscanear'); });
+
+  sb.auth.onAuthStateChange((evento) => { if (evento === 'SIGNED_OUT') mostrar('vistaLogin'); });
+  arrancar();
+</script>
+</body>
+</html>
