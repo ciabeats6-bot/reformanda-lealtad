@@ -1,0 +1,16 @@
+{
+  "name": "Reformanda · Caja",
+  "short_name": "Reformanda",
+  "description": "Sellos, canjes y personal del programa de lealtad Reformanda.",
+  "lang": "es-MX",
+  "start_url": "caja/",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#FAF7F2",
+  "theme_color": "#B01B31",
+  "icons": [
+    { "src": "img/icono-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "img/icono-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "img/icono-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
